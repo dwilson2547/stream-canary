@@ -1,0 +1,49 @@
+# Red path: v2.0.0 contains the off-by-one regression on orders with >5 items.
+# Schema and lag pass; the equivalence check catches the silent data change
+# and the rollout rolls back without touching prod.
+name: upper-v2-red
+broker: kafka
+prod:
+  bootstrap: localhost:9092
+  input_topic: orders.raw
+  output_topic: orders.enriched
+  partition: 0
+canary:
+  bootstrap: localhost:9092
+  input_topic: canary.orders.raw
+  output_topic: canary.orders.enriched
+deploy:
+  runtime: local
+  command: python examples/processors/upper/processor.py --role canary
+  env:
+    BOOTSTRAP: localhost:9092
+    INPUT_TOPIC: canary.orders.raw
+    OUTPUT_TOPIC: canary.orders.enriched
+    GROUP: canary-upper
+    PROCESSOR_VERSION: "2.0.0"
+  consumer_group: canary-upper
+  readiness_timeout_s: 60
+mirror:
+  mode: replay
+  sample_size: 200
+verify:
+  - type: schema
+    fields:
+      order_id: str
+      total_cents: int
+      status: str
+      version: str
+  - type: equivalence
+    join_key: order_id
+    ignore_fields: [processed_at_ms]
+    allow_diff:
+      version: "2.0.0"
+  - type: lag
+    group: canary-upper
+    topic: canary.orders.raw
+    max_lag: 10
+gates:
+  - type: exec
+    command: "true"
+on_success: promote
+promote_command: ./examples/promote-local.sh

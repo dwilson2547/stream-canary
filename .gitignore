@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.rollouts/
+dist/
+*.egg-info/
+.pytest_cache/
+journal.db
+.prod-processor.log
+.prod-processor.pid
