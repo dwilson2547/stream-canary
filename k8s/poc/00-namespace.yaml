@@ -1,0 +1,10 @@
+# stream-canary PoC namespace. Hand-applied (NOT ArgoCD-managed): this is a
+# disposable sandbox, so nothing here lives in infra/cluster-config and ArgoCD
+# has no Application targeting it. Teardown for the whole PoC is:
+#   kubectl delete namespace stream-canary
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stream-canary
+  labels:
+    app.kubernetes.io/part-of: stream-canary-poc

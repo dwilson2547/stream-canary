@@ -6,6 +6,7 @@ check but records results for all checks it managed to run.
 
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 
@@ -29,8 +30,17 @@ class CheckResult:
     missing_prod: int = 0
 
 
-def _drain_topic(bootstrap: str, topic: str, max_messages: int = 100_000, timeout_s: float = 5.0):
-    """Read a topic from the beginning without disturbing any consumer group."""
+def _drain_topic(bootstrap: str, topic: str, min_expected: int = 0,
+                 max_wait_s: float = 60.0, timeout_s: float = 5.0,
+                 max_messages: int = 100_000):
+    """Read a topic without disturbing any consumer group.
+
+    Completion rule: keep polling until at least `min_expected` records have
+    been seen AND two consecutive windows come back empty (a single empty
+    window can be a rebalance pause). If `min_expected` is never reached,
+    give up after `max_wait_s` and return what was read — the caller decides
+    whether the shortfall is a failure.
+    """
     consumer = Consumer(
         {
             "bootstrap.servers": bootstrap,
@@ -40,12 +50,15 @@ def _drain_topic(bootstrap: str, topic: str, max_messages: int = 100_000, timeou
         }
     )
     records = []
+    started = time.monotonic()
     try:
         consumer.subscribe([topic])
-        # Poll until two full windows of silence pass with no new messages.
-        # (A single empty batch can be a rebalance pause, not end-of-topic.)
         empty_streak = 0
-        while len(records) < max_messages and empty_streak < 2:
+        while len(records) < max_messages:
+            if len(records) >= min_expected and empty_streak >= 2:
+                break
+            if len(records) < min_expected and time.monotonic() - started > max_wait_s:
+                break
             batch = consumer.consume(num_messages=100, timeout=timeout_s)
             got_any = False
             for msg in batch:
@@ -71,8 +84,9 @@ def _payloads(records) -> list[dict]:
     return out
 
 
-def check_schema(bootstrap: str, topic: str, check: SchemaCheck) -> CheckResult:
-    records = _drain_topic(bootstrap, topic)
+def check_schema(bootstrap: str, topic: str, check: SchemaCheck,
+                 min_expected: int = 0) -> CheckResult:
+    records = _drain_topic(bootstrap, topic, min_expected=min_expected)
     payloads = _payloads(records)
     if not payloads:
         return CheckResult("schema", False, f"no messages on {topic} to validate")
@@ -118,13 +132,19 @@ def check_equivalence(
     if not expected_join_values:
         return CheckResult("equivalence", False, "journal is empty; nothing to compare")
 
+    # The canary should emit one record per mirrored input; wait for at least
+    # that many before judging (the drain gives up after max_wait_s if fewer
+    # arrive — missing keys are then reported as failures below).
+    min_expected = journal.count()
     prod_by_key = {}
     for payload in _payloads(_drain_topic(prod_bootstrap, prod_output_topic)):
         if check.join_key in payload:
             prod_by_key[str(payload[check.join_key])] = payload
 
     canary_by_key = {}
-    for payload in _payloads(_drain_topic(canary_bootstrap, canary_output_topic)):
+    for payload in _payloads(
+        _drain_topic(canary_bootstrap, canary_output_topic, min_expected=min_expected)
+    ):
         if check.join_key in payload:
             canary_by_key[str(payload[check.join_key])] = payload
 

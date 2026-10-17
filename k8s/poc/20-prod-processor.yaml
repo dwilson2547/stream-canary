@@ -1,0 +1,35 @@
+# "Prod" processor v1, consuming orders.raw -> orders.enriched (group upper-prod).
+# Promote (green path) is `kubectl set image` to a new tag, run by the rollout's
+# promote_command — no ArgoCD involvement.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upper-prod
+  namespace: stream-canary
+  labels:
+    app: upper-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: upper-prod
+  template:
+    metadata:
+      labels:
+        app: upper-prod
+    spec:
+      containers:
+        - name: service
+          image: dwilson2547/stream-canary-processor:1.4.2
+          imagePullPolicy: Always
+          env:
+            - name: BOOTSTRAP
+              value: 192.168.0.35:31992
+            - name: INPUT_TOPIC
+              value: orders.raw
+            - name: OUTPUT_TOPIC
+              value: orders.enriched
+            - name: GROUP
+              value: upper-prod
+            - name: PROCESSOR_VERSION
+              value: "1.4.2"

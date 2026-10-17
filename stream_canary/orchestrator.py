@@ -8,7 +8,13 @@ from pathlib import Path
 
 from . import mirror as mirror_mod
 from . import verify as verify_mod
-from .executor import CanaryHandle, delete_topics, ensure_topics, start_local_canary
+from .executor import (
+    CanaryHandle,
+    delete_consumer_group,
+    delete_topics,
+    ensure_topics,
+    start_canary,
+)
 from .gates import run_exec_gate, run_manual_gate
 from .journal import Journal
 from .report import RolloutReport, now_utc
@@ -35,12 +41,9 @@ def run_rollout(spec: RolloutSpec, non_interactive: bool = False) -> int:
     try:
         # ---- phase: deploy ------------------------------------------------
         report.failed_phase = "deploy"
-        log.info("[%s] phase: deploy", spec.name)
+        log.info("[%s] phase: deploy (runtime %s)", spec.name, spec.deploy.runtime)
         ensure_topics(spec.canary.bootstrap, [spec.canary.input_topic, spec.canary.output_topic])
-        if spec.deploy.runtime == "local":
-            canary = start_local_canary(spec)
-        else:
-            raise NotImplementedError("k8s runtime is the next milestone; use runtime 'local'")
+        canary = start_canary(spec)
         canary.wait_ready()
 
         # ---- phase: mirror ------------------------------------------------
@@ -89,7 +92,10 @@ def run_rollout(spec: RolloutSpec, non_interactive: bool = False) -> int:
         all_passed = True
         for check in spec.verify:
             if isinstance(check, SchemaCheck):
-                cr = verify_mod.check_schema(spec.canary.bootstrap, spec.canary.output_topic, check)
+                cr = verify_mod.check_schema(
+                    spec.canary.bootstrap, spec.canary.output_topic, check,
+                    min_expected=report.mirrored or 0,
+                )
             elif isinstance(check, EquivalenceCheck):
                 cr = verify_mod.check_equivalence(
                     spec.prod.bootstrap, spec.prod.output_topic,
@@ -161,6 +167,12 @@ def run_rollout(spec: RolloutSpec, non_interactive: bool = False) -> int:
                 spec.canary.bootstrap,
                 [spec.canary.input_topic, spec.canary.output_topic],
             )
+            # Group state outlives the canary; a reused group name would make
+            # the next rollout resume from stale committed offsets.
+            try:
+                delete_consumer_group(spec.canary.bootstrap, spec.deploy.consumer_group)
+            except Exception as exc:
+                log.warning("could not delete canary consumer group: %s", exc)
         if journal is not None:
             journal.close()
         report.finished_at = now_utc()

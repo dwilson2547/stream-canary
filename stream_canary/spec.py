@@ -22,9 +22,12 @@ class CanarySide(BaseModel):
 
 class K8sDeploy(BaseModel):
     namespace: str
-    chart: str | None = None
-    values_file: str | None = None
-    image: str | None = None
+    # Canary version image, e.g. registry/account/service:2.0.1-rc1.
+    image: str
+    # Name of the ephemeral canary Deployment (created/deleted per rollout).
+    name: str
+    # Optional kubeconfig context; default is the current context.
+    kubecontext: str | None = None
 
 
 class CanaryDeploy(BaseModel):
