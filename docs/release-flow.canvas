@@ -1,0 +1,113 @@
+{
+	"nodes": [
+		{
+			"id": "title",
+			"type": "text",
+			"x": -50,
+			"y": -270,
+			"width": 900,
+			"height": 180,
+			"text": "# stream-canary — release flow\n\nGreen path along the top: **deploy → mirror → settle → verify → gates → promote**. Prod is never modified until promote.\n\nRed edges: any verify check or gate refuses → **rollback** — teardown runs, prod untouched."
+		},
+		{
+			"id": "group",
+			"type": "group",
+			"x": -50,
+			"y": -70,
+			"width": 3050,
+			"height": 470,
+			"label": "canary phases — isolated from prod until promote"
+		},
+		{
+			"id": "deploy",
+			"type": "text",
+			"x": 0,
+			"y": 0,
+			"width": 420,
+			"height": 260,
+			"color": "#086ddd",
+			"text": "## 1 — Deploy canary\n\n**k8s:** generate the canary `Deployment` from the spec (image + env), `kubectl apply`, wait pod Ready\n**local:** canary runs as a subprocess\n\n- canary topics created (`canary.*`)\n- readiness = canary consumer group is registered\n- **prod is untouched**"
+		},
+		{
+			"id": "mirror",
+			"type": "text",
+			"x": 500,
+			"y": 0,
+			"width": 420,
+			"height": 300,
+			"color": "#086ddd",
+			"text": "## 2 — Mirror prod partition\n\n- **replay**: latest N messages of `prod.input_topic[partition]` — or **live-tail** new traffic\n- ephemeral consumer, `enable.auto.commit=false` → **no offset commits; prod consumer groups and lag undisturbed**\n- every mirrored message journaled (prod offset + join key) so outputs can be compared"
+		},
+		{
+			"id": "settle",
+			"type": "text",
+			"x": 1000,
+			"y": 0,
+			"width": 420,
+			"height": 180,
+			"color": "#086ddd",
+			"text": "## 3 — Settle\n\n- poll the canary consumer group's lag on its input topic until it hits 0\n- verification only runs once the canary has drained every mirrored message"
+		},
+		{
+			"id": "verify",
+			"type": "text",
+			"x": 1500,
+			"y": 0,
+			"width": 420,
+			"height": 340,
+			"color": "#086ddd",
+			"text": "## 4 — Verify (conditions in YAML)\n\n- **schema** — required fields and types on every canary output\n- **equivalence** — canary output vs prod output for each journaled key, with `ignore_fields`, `numeric_tolerance`, and `allow_diff` for *expected* changes\n- **lag** — consumer-group lag ceiling\n\nAll results and per-message diffs go into the report."
+		},
+		{
+			"id": "gates",
+			"type": "text",
+			"x": 2000,
+			"y": 0,
+			"width": 420,
+			"height": 220,
+			"color": "#086ddd",
+			"text": "## 5 — Gates\n\n- **manual** — y/n prompt (auto-approves with `--non-interactive`)\n- **exec** — command exit code decides; wire the other teams' validation pipeline here"
+		},
+		{
+			"id": "promote",
+			"type": "text",
+			"x": 2500,
+			"y": 0,
+			"width": 420,
+			"height": 200,
+			"color": "#44cf6e",
+			"text": "## 6 — Promote\n\n- **k8s:** `kubectl set image` on the prod Deployment\n- **local:** `promote_command`\n\nThe **first and only step that changes prod**."
+		},
+		{
+			"id": "teardown",
+			"type": "text",
+			"x": 2500,
+			"y": 640,
+			"width": 420,
+			"height": 280,
+			"color": "#636a83",
+			"text": "## 7 — Teardown\n\n- delete the canary Deployment / process\n- delete canary topics **and the canary consumer group** — and verify removal: Kafka deletes are async, a leftover poisons the next rollout\n\nRuns on every path, success or failure."
+		},
+		{
+			"id": "report",
+			"type": "text",
+			"x": 3020,
+			"y": 640,
+			"width": 420,
+			"height": 280,
+			"color": "#636a83",
+			"text": "## Report\n\n`.rollouts/<name>/<timestamp>/`\n\n- outcome: **promoted** · **rolled_back** · verify-only\n- failed phase + error\n- per-check results, per-message diffs, gate results, mirror journal\n\nExit code: **0** promoted, **1** rolled back"
+		}
+	],
+	"edges": [
+		{ "id": "e1", "fromNode": "deploy", "fromSide": "right", "toNode": "mirror", "toSide": "left" },
+		{ "id": "e2", "fromNode": "mirror", "fromSide": "right", "toNode": "settle", "toSide": "left" },
+		{ "id": "e3", "fromNode": "settle", "fromSide": "right", "toNode": "verify", "toSide": "left" },
+		{ "id": "e4", "fromNode": "verify", "fromSide": "right", "toNode": "gates", "toSide": "left", "label": "checks pass" },
+		{ "id": "e5", "fromNode": "gates", "fromSide": "right", "toNode": "promote", "toSide": "left", "label": "approved" },
+		{ "id": "e6", "fromNode": "promote", "fromSide": "bottom", "toNode": "teardown", "toSide": "top", "label": "prod now runs the new version" },
+		{ "id": "e7", "fromNode": "verify", "fromSide": "bottom", "toNode": "teardown", "toSide": "left", "label": "check fails → rollback", "color": "#e64545" },
+		{ "id": "e8", "fromNode": "gates", "fromSide": "bottom", "toNode": "teardown", "toSide": "top", "label": "veto → rollback", "color": "#e64545" },
+		{ "id": "e9", "fromNode": "teardown", "fromSide": "right", "toNode": "report", "toSide": "left" }
+	]
+}

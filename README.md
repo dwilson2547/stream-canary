@@ -140,3 +140,4 @@ The Kafka is a single-pod KRaft broker (emptyDir, disposable) exposed as NodePor
 - `stream_canary/report.py` — rollout report (json + md)
 - `examples/` — sample processor (v1 prod / v2 canary) + its image, seed script, rollout specs (local + k8s)
 - `k8s/poc/` — PoC stack manifests for the cluster (namespace, Kafka, prod processor); `compose/kafka.yml` — local Kafka
+- `docs/release-flow.canvas` — JSON Canvas diagram of the rollout phases (green path + rollback edges; opens in Obsidian)
