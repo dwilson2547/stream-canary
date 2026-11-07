@@ -21,6 +21,8 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: service
+          # The PoC's starting version. A promoted canary (examples/rollouts/*-k8s.yaml promote_command) moves the
+          # live Deployment on with `kubectl set image`; re-running apply.sh puts it back here.
           image: dwilson2547/stream-canary-processor:1.4.2
           imagePullPolicy: Always
           env:
