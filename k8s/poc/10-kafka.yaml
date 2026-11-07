@@ -38,6 +38,7 @@ spec:
       labels:
         app: kafka
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: kafka
           image: apache/kafka:3.9.0

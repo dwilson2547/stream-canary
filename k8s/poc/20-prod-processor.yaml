@@ -18,6 +18,7 @@ spec:
       labels:
         app: upper-prod
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: service
           image: dwilson2547/stream-canary-processor:1.4.2
